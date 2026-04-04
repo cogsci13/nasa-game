@@ -4,7 +4,7 @@ import dynamic from 'next/dynamic'
 import Image from 'next/image'
 import { useEffect, useState } from 'react'
 
-const ISSMap = dynamic(() => import('@/components/ISSMap'), { ssr: false })
+const SatelliteMap = dynamic(() => import('@/components/SatelliteMap'), { ssr: false })
 
 interface Astronaut {
   name: string
@@ -75,7 +75,7 @@ export default function TrackerPage() {
 
       {/* Map */}
       <section className="mb-8">
-        <ISSMap />
+        <SatelliteMap />
       </section>
 
       {/* Astronauts */}
