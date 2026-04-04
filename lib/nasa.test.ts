@@ -2,8 +2,10 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 import {
   fetchAPOD,
   clearAPODCache,
+  formatDateForAPI,
   NASARateLimitError,
   NASANetworkError,
+  NASAAPIError,
   type APODResponse,
 } from './nasa'
 
@@ -28,6 +30,19 @@ const makeVideoAPOD = (date = '2024-01-15'): APODResponse => ({
 beforeEach(() => {
   clearAPODCache()
   vi.restoreAllMocks()
+})
+
+describe('formatDateForAPI', () => {
+  it('formats a known UTC date correctly', () => {
+    const date = new Date('2024-01-15T00:00:00Z')
+    expect(formatDateForAPI(date)).toBe('2024-01-15')
+  })
+
+  it('uses UTC date, not local time', () => {
+    // 2024-01-15T00:30:00Z is still Jan 15 in UTC regardless of local timezone
+    const date = new Date('2024-01-15T00:30:00Z')
+    expect(formatDateForAPI(date)).toBe('2024-01-15')
+  })
 })
 
 describe('fetchAPOD', () => {
@@ -84,6 +99,36 @@ describe('fetchAPOD', () => {
     expect(calls[1][0]).toContain('date=2024-01-14')
   })
 
+  it('video-day result is cached under the original requested date', async () => {
+    const videoApod = makeVideoAPOD('2024-01-15')
+    const imageApod = makeImageAPOD('2024-01-14')
+
+    const mockFetch = vi
+      .fn()
+      .mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: async () => videoApod,
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: async () => imageApod,
+      })
+
+    vi.stubGlobal('fetch', mockFetch)
+
+    // First call: fetches twice (video + fallback image)
+    const result1 = await fetchAPOD('2024-01-15')
+    expect(result1).toEqual(imageApod)
+    expect(mockFetch).toHaveBeenCalledTimes(2)
+
+    // Second call for the same video date: should be a cache hit, no new fetch
+    const result2 = await fetchAPOD('2024-01-15')
+    expect(result2).toEqual(imageApod)
+    expect(mockFetch).toHaveBeenCalledTimes(2) // still 2, no additional fetch
+  })
+
   it('throws NASARateLimitError on 429 response', async () => {
     vi.stubGlobal(
       'fetch',
@@ -99,6 +144,37 @@ describe('fetchAPOD', () => {
     expect((err as NASARateLimitError).message).toMatch(/rate limit/i)
   })
 
+  it('throws NASAAPIError on non-OK HTTP responses (e.g. 500)', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValueOnce({
+        ok: false,
+        status: 500,
+        json: async () => ({ error: 'internal server error' }),
+      })
+    )
+
+    const err = await fetchAPOD('2024-01-15').catch((e: unknown) => e)
+    expect(err).toBeInstanceOf(NASAAPIError)
+    expect((err as NASAAPIError).status).toBe(500)
+    expect((err as NASAAPIError).message).toMatch(/500/)
+  })
+
+  it('throws NASAAPIError on 404 response', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValueOnce({
+        ok: false,
+        status: 404,
+        json: async () => ({ error: 'not found' }),
+      })
+    )
+
+    const err = await fetchAPOD('2024-01-15').catch((e: unknown) => e)
+    expect(err).toBeInstanceOf(NASAAPIError)
+    expect((err as NASAAPIError).status).toBe(404)
+  })
+
   it('throws NASANetworkError on network failure', async () => {
     vi.stubGlobal(
       'fetch',
@@ -108,6 +184,23 @@ describe('fetchAPOD', () => {
     const err = await fetchAPOD('2024-01-15').catch((e: unknown) => e)
     expect(err).toBeInstanceOf(NASANetworkError)
     expect((err as NASANetworkError).message).toMatch(/network error/i)
+  })
+
+  it('throws NASANetworkError on malformed JSON response', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: async () => {
+          throw new SyntaxError('Unexpected token')
+        },
+      })
+    )
+
+    const err = await fetchAPOD('2024-01-15').catch((e: unknown) => e)
+    expect(err).toBeInstanceOf(NASANetworkError)
+    expect((err as NASANetworkError).message).toMatch(/parse JSON/i)
   })
 
   it('caching: same date called twice only triggers one fetch call', async () => {
