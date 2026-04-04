@@ -85,21 +85,21 @@ async function fetchAPODWithRetry(
   originalDate: string,
   attempt: number
 ): Promise<APODResponse> {
-  const apiKey = process.env.NASA_API_KEY || 'DEMO_KEY'
-
   // Return cached response if available
   const cached = apodCache.get(date)
   if (cached) {
     return cached
   }
 
-  const url = `https://api.nasa.gov/planetary/apod?api_key=${apiKey}&date=${date}`
+  // Use internal API route so NASA_API_KEY stays server-side
+  const isServer = typeof window === 'undefined'
+  const base = isServer ? process.env.NEXT_PUBLIC_BASE_URL || 'http://localhost:3000' : ''
+  const url = `${base}/api/apod${date ? `?date=${encodeURIComponent(date)}` : ''}`
 
   let response: Response
   try {
     response = await fetch(url)
   } catch (err) {
-    // Fix #3: fetch() rejection = NASANetworkError
     throw new NASANetworkError(
       `Network error fetching APOD for ${date}: ${err instanceof Error ? err.message : String(err)}`
     )
