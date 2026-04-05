@@ -109,8 +109,18 @@ async function fetchAPODWithRetry(
     throw new NASARateLimitError(`NASA API rate limit exceeded while fetching APOD for ${date}`)
   }
 
+  if (response.status === 404) {
+    // APOD not yet published for this date — fall back to previous day
+    if (attempt >= 3) {
+      throw new NASAAPIError(404, `No APOD available for date ${date} or recent dates`)
+    }
+    const prevDay = getPreviousDay(date)
+    const result = await fetchAPODWithRetry(prevDay, originalDate, attempt + 1)
+    apodCache.set(originalDate, result)
+    return result
+  }
+
   if (!response.ok) {
-    // Fix #3: Non-OK HTTP responses use NASAAPIError
     throw new NASAAPIError(
       response.status,
       `NASA API returned status ${response.status} for date ${date}`
