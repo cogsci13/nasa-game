@@ -37,11 +37,14 @@ export default function SatelliteMap() {
       })
       leafletMapRef.current = map
 
-      L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
+      L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}.png', {
         subdomains: 'abcd',
         maxZoom: 20,
         noWrap: false,
       }).addTo(map)
+
+      // Force map to recalculate container dimensions after paint
+      setTimeout(() => map.invalidateSize(), 100)
 
       async function fetchAndUpdate() {
         try {
