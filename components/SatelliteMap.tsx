@@ -25,8 +25,22 @@ export default function SatelliteMap() {
       const L = (await import('leaflet')).default
       if (cancelled || !containerRef.current) return
 
+      // Wait until the container has real dimensions before initializing.
+      // dynamic import (ssr:false) can render before layout is complete.
+      await new Promise<void>(resolve => {
+        const check = () => {
+          if (cancelled) { resolve(); return }
+          if (containerRef.current && containerRef.current.offsetWidth > 0) {
+            resolve()
+          } else {
+            requestAnimationFrame(check)
+          }
+        }
+        check()
+      })
+      if (cancelled || !containerRef.current) return
+
       // StrictMode double-invoke: Leaflet leaves _leaflet_id on the DOM node.
-      // Delete it so the second mount can initialize cleanly.
       const el = containerRef.current as HTMLElement & { _leaflet_id?: number }
       if (el._leaflet_id) delete el._leaflet_id
 
@@ -46,8 +60,10 @@ export default function SatelliteMap() {
         maxZoom: 20,
       }).addTo(map)
 
-      // Recalculate after paint so tiles cover the full container
-      setTimeout(() => { if (!cancelled) map.invalidateSize() }, 200)
+      // ResizeObserver ensures tiles always fill the full container
+      const ro = new ResizeObserver(() => { map.invalidateSize() })
+      ro.observe(containerRef.current)
+      map.once('remove', () => ro.disconnect())
 
       async function fetchAndUpdate() {
         if (cancelled) return
