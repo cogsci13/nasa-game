@@ -21,11 +21,14 @@ export default function SatelliteMap() {
     if (!mapRef.current || leafletMapRef.current) return
 
     let interval: ReturnType<typeof setInterval>
+    let cancelled = false
 
     async function init() {
       const L = (await import('leaflet')).default
 
-      const map = L.map(mapRef.current!, {
+      if (cancelled || !mapRef.current) return
+
+      const map = L.map(mapRef.current, {
         center: [20, 0],
         zoom: 2,
         minZoom: 2,
@@ -106,6 +109,7 @@ export default function SatelliteMap() {
     init()
 
     return () => {
+      cancelled = true
       clearInterval(interval)
       leafletMapRef.current?.remove()
       leafletMapRef.current = null
