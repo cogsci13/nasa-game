@@ -33,12 +33,14 @@ export default function SatelliteMap() {
         maxZoom: 6,
         zoomControl: true,
         attributionControl: false,
+        worldCopyJump: true,
       })
       leafletMapRef.current = map
 
       L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
         subdomains: 'abcd',
         maxZoom: 20,
+        noWrap: false,
       }).addTo(map)
 
       async function fetchAndUpdate() {
