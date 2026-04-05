@@ -1,7 +1,6 @@
 'use client'
 
 import { useEffect, useRef, useState } from 'react'
-import 'leaflet/dist/leaflet.css'
 import type { SatellitePosition } from '@/app/api/satellites/route'
 
 const TRAIL_LENGTH = 60
