@@ -5,11 +5,9 @@ import type { SatellitePosition } from '@/app/api/satellites/route'
 
 const TRAIL_LENGTH = 60
 
-type TrailEntry = { id: number; positions: [number, number][] }
-
 export default function SatelliteMap() {
-  const mapRef = useRef<HTMLDivElement>(null)
-  const leafletMapRef = useRef<import('leaflet').Map | null>(null)
+  const containerRef = useRef<HTMLDivElement>(null)
+  const mapRef = useRef<import('leaflet').Map | null>(null)
   const markersRef = useRef<Map<number, import('leaflet').Marker>>(new Map())
   const trailsRef = useRef<Map<number, import('leaflet').Polyline>>(new Map())
   const trailDataRef = useRef<Map<number, [number, number][]>>(new Map())
@@ -18,17 +16,21 @@ export default function SatelliteMap() {
   const [error, setError] = useState(false)
 
   useEffect(() => {
-    if (!mapRef.current || leafletMapRef.current) return
+    if (!containerRef.current) return
 
-    let interval: ReturnType<typeof setInterval>
     let cancelled = false
+    let intervalId: ReturnType<typeof setInterval> | null = null
 
     async function init() {
       const L = (await import('leaflet')).default
+      if (cancelled || !containerRef.current) return
 
-      if (cancelled || !mapRef.current) return
+      // StrictMode double-invoke: Leaflet leaves _leaflet_id on the DOM node.
+      // Delete it so the second mount can initialize cleanly.
+      const el = containerRef.current as HTMLElement & { _leaflet_id?: number }
+      if (el._leaflet_id) delete el._leaflet_id
 
-      const map = L.map(mapRef.current, {
+      const map = L.map(containerRef.current, {
         center: [20, 0],
         zoom: 2,
         minZoom: 2,
@@ -37,22 +39,24 @@ export default function SatelliteMap() {
         attributionControl: false,
         worldCopyJump: true,
       })
-      leafletMapRef.current = map
+      mapRef.current = map
 
       L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}.png', {
         subdomains: 'abcd',
         maxZoom: 20,
-        noWrap: false,
       }).addTo(map)
 
-      // Force map to recalculate container dimensions after paint
-      setTimeout(() => map.invalidateSize(), 100)
+      // Recalculate after paint so tiles cover the full container
+      setTimeout(() => { if (!cancelled) map.invalidateSize() }, 200)
 
       async function fetchAndUpdate() {
+        if (cancelled) return
         try {
           const res = await fetch('/api/satellites')
           if (!res.ok) throw new Error()
           const data: SatellitePosition[] = await res.json()
+          if (cancelled) return
+
           setSatellites(data)
           setError(false)
 
@@ -66,10 +70,7 @@ export default function SatelliteMap() {
 
             if (!trailsRef.current.has(sat.id)) {
               const trail = L.polyline(updated, {
-                color: sat.color,
-                weight: 2,
-                opacity: 0.5,
-                dashArray: '4 4',
+                color: sat.color, weight: 2, opacity: 0.5, dashArray: '4 4',
               }).addTo(map)
               trailsRef.current.set(sat.id, trail)
             } else {
@@ -86,33 +87,30 @@ export default function SatelliteMap() {
               })
               const marker = L.marker(latlng, { icon })
                 .addTo(map)
-                .on('click', () => {
-                  setSelected(s => (s?.id === sat.id ? null : sat))
-                })
+                .on('click', () => setSelected(s => s?.id === sat.id ? null : sat))
               markersRef.current.set(sat.id, marker)
             } else {
               markersRef.current.get(sat.id)!.setLatLng(latlng)
             }
           }
 
-          // Keep selected in sync with latest data
           setSelected(prev => prev ? (data.find(s => s.id === prev.id) ?? null) : null)
         } catch {
-          setError(true)
+          if (!cancelled) setError(true)
         }
       }
 
       await fetchAndUpdate()
-      interval = setInterval(fetchAndUpdate, 5000)
+      if (!cancelled) intervalId = setInterval(fetchAndUpdate, 5000)
     }
 
     init()
 
     return () => {
       cancelled = true
-      clearInterval(interval)
-      leafletMapRef.current?.remove()
-      leafletMapRef.current = null
+      if (intervalId) clearInterval(intervalId)
+      mapRef.current?.remove()
+      mapRef.current = null
       markersRef.current.clear()
       trailsRef.current.clear()
       trailDataRef.current.clear()
@@ -121,13 +119,15 @@ export default function SatelliteMap() {
 
   return (
     <div className="space-y-3">
-      <div ref={mapRef} className="w-full rounded-xl overflow-hidden border border-white/10" style={{ height: '420px' }} />
+      {/* Wrapper handles border-radius; map div must NOT have overflow-hidden */}
+      <div className="rounded-xl border border-white/10 overflow-hidden">
+        <div ref={containerRef} style={{ height: '420px', width: '100%' }} />
+      </div>
 
       {error && (
         <p className="text-center text-red-400 text-sm">위성 위치를 가져올 수 없습니다.</p>
       )}
 
-      {/* Legend */}
       {satellites.length > 0 && (
         <div className="flex flex-wrap gap-2">
           {satellites.map(sat => (
@@ -148,7 +148,6 @@ export default function SatelliteMap() {
         </div>
       )}
 
-      {/* Selected satellite stats */}
       {selected && (
         <div className="rounded-xl border border-white/10 bg-white/5 p-4">
           <p className="text-sm font-semibold mb-3" style={{ color: selected.color }}>
