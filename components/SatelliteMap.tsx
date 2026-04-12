@@ -20,6 +20,8 @@ export default function SatelliteMap() {
 
     let cancelled = false
     let intervalId: ReturnType<typeof setInterval> | null = null
+    let resizeObserver: ResizeObserver | null = null
+    let resizeFrame: number | null = null
 
     async function init() {
       const L = (await import('leaflet')).default
@@ -60,10 +62,26 @@ export default function SatelliteMap() {
         maxZoom: 20,
       }).addTo(map)
 
-      // ResizeObserver ensures tiles always fill the full container
-      const ro = new ResizeObserver(() => { map.invalidateSize() })
-      ro.observe(containerRef.current)
-      map.once('remove', () => ro.disconnect())
+      // ResizeObserver can fire during mount/unmount churn in StrictMode.
+      // Defer invalidateSize to the next frame and bail out once the map is torn down.
+      const scheduleInvalidate = () => {
+        if (cancelled || mapRef.current !== map || !containerRef.current?.isConnected) return
+        if (resizeFrame !== null) {
+          cancelAnimationFrame(resizeFrame)
+        }
+        resizeFrame = requestAnimationFrame(() => {
+          if (cancelled || mapRef.current !== map || !containerRef.current?.isConnected) return
+          map.invalidateSize({ pan: false, debounceMoveend: true })
+        })
+      }
+
+      resizeObserver = new ResizeObserver(() => {
+        scheduleInvalidate()
+      })
+      resizeObserver.observe(containerRef.current)
+      map.whenReady(() => {
+        scheduleInvalidate()
+      })
 
       async function fetchAndUpdate() {
         if (cancelled) return
@@ -125,6 +143,8 @@ export default function SatelliteMap() {
     return () => {
       cancelled = true
       if (intervalId) clearInterval(intervalId)
+      if (resizeFrame !== null) cancelAnimationFrame(resizeFrame)
+      resizeObserver?.disconnect()
       mapRef.current?.remove()
       mapRef.current = null
       markersRef.current.clear()

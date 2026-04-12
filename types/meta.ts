@@ -1,7 +1,14 @@
-import type { APODResponse } from '@/lib/nasa'
-import type { Question } from '@/lib/questions'
-
 export type Region = 'earth_orbit' | 'moon' | 'mars' | 'jupiter' | 'exoplanet'
+
+export type BadgeId =
+  | 'first-orbit'
+  | 'moon-window'
+  | 'hot-streak'
+  | 'daily-pilot'
+  | 'arcade-runner'
+  | 'perfect-run'
+
+export type WeeklyGoalId = 'daily-streaker' | 'arcade-hopper' | 'sharp-eye'
 
 export interface RegionInfo {
   id: Region
@@ -19,50 +26,78 @@ export const REGIONS: RegionInfo[] = [
 ]
 
 export const LEVEL_THRESHOLDS: number[] = [
-  0,    // Lv 1
-  100,  // Lv 2
-  250,  // Lv 3
-  450,  // Lv 4
-  700,  // Lv 5
-  1000, // Lv 6
-  1350, // Lv 7
-  1750, // Lv 8
-  2200, // Lv 9
-  2700, // Lv 10
-  3300, // Lv 11
-  4000, // Lv 12
-  4800, // Lv 13
-  5700, // Lv 14
-  6700, // Lv 15
-  7800, // Lv 16
-  9000, // Lv 17
-  10300, // Lv 18
-  11700, // Lv 19
-  13200, // Lv 20
+  0,
+  100,
+  250,
+  450,
+  700,
+  1000,
+  1350,
+  1750,
+  2200,
+  2700,
+  3300,
+  4000,
+  4800,
+  5700,
+  6700,
+  7800,
+  9000,
+  10300,
+  11700,
+  13200,
 ]
-
-export const XP_REWARDS = {
-  correct: 50,
-  riskCorrect: 120,
-  riskWrong: -20,
-} as const
 
 export interface Equipment {
   analyzer: { uses: number }
 }
 
 export interface DailyMission {
-  date: string        // "YYYY-MM-DD"
+  date: string
   completed: boolean
   streak: number
 }
 
-export interface CurrentMission {
-  apodData: APODResponse
-  question: Question
-  selectedIndex: number | null
-  isRisk: boolean
-  eliminatedChoices: number[]  // indices removed by analyzer
+export interface ProgressStats {
+  dailyCompletions: number
+  arcadeRuns: number
+  perfectRuns: number
+  correctAnswers: number
+  wrongAnswers: number
+  bestArcadeScore: number
+  bestArcadeCombo: number
+  bestSpecialSuccesses: number
+}
+
+export interface ArcadeRunRecord {
+  id: string
+  finishedAt: string
+  score: number
+  rewardXP: number
+  roundsCleared: number
+  livesLeft: number
+  bestCombo: number
+  specialSuccesses: number
+  perfect: boolean
+}
+
+export interface WeeklyGoalDefinition {
+  id: WeeklyGoalId
+  label: string
+  description: string
+  target: number
+  rewardXP: number
+}
+
+export interface WeeklyGoalProgress extends WeeklyGoalDefinition {
+  progress: number
+  completed: boolean
+  claimed: boolean
+}
+
+export interface WeeklyGoalsState {
+  weekKey: string
+  goals: WeeklyGoalProgress[]
 }
 
 export function getLevel(xp: number): number {
@@ -78,15 +113,24 @@ export function getLevel(xp: number): number {
 }
 
 export function getCurrentRegion(level: number): RegionInfo {
-  const unlocked = REGIONS.filter((r) => level >= r.minLevel)
+  const unlocked = REGIONS.filter((region) => level >= region.minLevel)
   return unlocked[unlocked.length - 1] ?? REGIONS[0]
 }
 
-export function xpForNextLevel(currentXP: number): { current: number; needed: number; progress: number } {
+export function xpForNextLevel(currentXP: number): {
+  current: number
+  needed: number
+  progress: number
+} {
   const level = getLevel(currentXP)
   const currentThreshold = LEVEL_THRESHOLDS[level - 1] ?? 0
   const nextThreshold = LEVEL_THRESHOLDS[level] ?? LEVEL_THRESHOLDS[LEVEL_THRESHOLDS.length - 1]
   const needed = nextThreshold - currentThreshold
   const current = currentXP - currentThreshold
-  return { current, needed, progress: needed > 0 ? current / needed : 1 }
+
+  return {
+    current,
+    needed,
+    progress: needed > 0 ? current / needed : 1,
+  }
 }

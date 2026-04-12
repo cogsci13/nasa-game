@@ -160,10 +160,34 @@ describe('fetchAPOD', () => {
     expect((err as NASAAPIError).message).toMatch(/500/)
   })
 
-  it('throws NASAAPIError on 404 response', async () => {
+  it('falls back to the previous day on 404 response', async () => {
+    const fallbackApod = makeImageAPOD('2024-01-14')
+
     vi.stubGlobal(
       'fetch',
-      vi.fn().mockResolvedValueOnce({
+      vi
+        .fn()
+        .mockResolvedValueOnce({
+          ok: false,
+          status: 404,
+          json: async () => ({ error: 'not found' }),
+        })
+        .mockResolvedValueOnce({
+          ok: true,
+          status: 200,
+          json: async () => fallbackApod,
+        })
+    )
+
+    const result = await fetchAPOD('2024-01-15')
+    expect(result).toEqual(fallbackApod)
+    expect(fetch).toHaveBeenCalledTimes(2)
+  })
+
+  it('throws NASAAPIError after repeated 404 responses exhaust retries', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue({
         ok: false,
         status: 404,
         json: async () => ({ error: 'not found' }),
@@ -173,6 +197,7 @@ describe('fetchAPOD', () => {
     const err = await fetchAPOD('2024-01-15').catch((e: unknown) => e)
     expect(err).toBeInstanceOf(NASAAPIError)
     expect((err as NASAAPIError).status).toBe(404)
+    expect(fetch).toHaveBeenCalledTimes(4)
   })
 
   it('throws NASANetworkError on network failure', async () => {
